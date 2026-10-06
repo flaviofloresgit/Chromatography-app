@@ -24,36 +24,45 @@ DEFAULT_COLUMNS = [
 ]
 
 def load_saved_columns() -> list:
-    """Loads default and user-saved custom chromatographic columns."""
+    """Loads saved chromatographic columns from storage or initializes defaults."""
     filepath = os.path.join("local_storage", "columns.json")
     if os.path.exists(filepath):
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-                combined = list(DEFAULT_COLUMNS)
-                for c in saved:
-                    if c not in combined:
-                        combined.append(c)
-                return combined
+                if isinstance(saved, list) and saved:
+                    return saved
         except Exception:
             pass
+    # First time initialization
+    save_columns_list(list(DEFAULT_COLUMNS))
     return list(DEFAULT_COLUMNS)
 
+def save_columns_list(columns: list):
+    """Saves the complete list of columns to persistent storage."""
+    os.makedirs("local_storage", exist_ok=True)
+    filepath = os.path.join("local_storage", "columns.json")
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(columns, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 def save_new_column(new_column: str):
-    """Saves a new column specification to persistent storage."""
+    """Adds a new column if not already present."""
     if not new_column or not new_column.strip():
         return
     new_column = new_column.strip()
-    os.makedirs("local_storage", exist_ok=True)
-    filepath = os.path.join("local_storage", "columns.json")
     current = load_saved_columns()
     if new_column not in current:
         current.append(new_column)
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(current, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        save_columns_list(current)
+
+def delete_column(column_to_delete: str):
+    """Removes a column from the persistent list."""
+    current = load_saved_columns()
+    updated = [c for c in current if c != column_to_delete]
+    save_columns_list(updated)
 
 def render_upload_view(on_analysis_completed):
     """
@@ -211,9 +220,26 @@ def render_upload_view(on_analysis_completed):
                 else:
                     st.warning("Escribe el nombre de la columna primero.")
 
-        st.caption("Columnas registradas actualmente:")
-        for idx, c in enumerate(load_saved_columns(), start=1):
-            st.markdown(f"- **{idx}.** `{c}`")
+        st.caption("Columnas registradas actualmente en tu catálogo:")
+        cols_list = load_saved_columns()
+        if not cols_list:
+            st.info("No hay columnas registradas en el catálogo. Agrega una arriba o restaura las predeterminadas.")
+        else:
+            for idx, c in enumerate(cols_list, start=1):
+                r_col1, r_col2 = st.columns([5.5, 0.8])
+                with r_col1:
+                    st.markdown(f"**{idx}.** `{c}`")
+                with r_col2:
+                    if st.button("🗑️", key=f"del_cat_col_{idx}", help=f"Eliminar '{c}' del catálogo"):
+                        delete_column(c)
+                        st.success("Columna eliminada del catálogo.")
+                        st.rerun()
+
+        st.markdown("<div style='margin-top: 0.8rem;'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Restaurar Columnas por Defecto", help="Restaura la lista inicial de columnas comerciales"):
+            save_columns_list(list(DEFAULT_COLUMNS))
+            st.info("Catálogo restaurado a las columnas predeterminadas.")
+            st.rerun()
 
 
 def _execute_analysis_workflow(
