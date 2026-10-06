@@ -1,0 +1,24 @@
+# Core & Framework
+streamlit>=1.35.0
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.2
+
+# Visualization & Charts
+plotly>=5.18.0
+matplotlib>=3.8.0
+
+# Google Gemini AI SDK
+google-genai>=0.1.0
+
+# Database & Cloud Storage
+supabase>=2.4.0
+postgrest>=0.16.0
+gotrue>=2.4.0
+
+# PDF Report Generation
+reportlab>=4.1.0
+
+# Utilities & Config
+python-dotenv>=1.0.0
+pydantic>=2.5.0

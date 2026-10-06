@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments & secrets
+.env
+.venv/
+env/
+venv/
+ENV/
+*.local
+
+# Streamlit config & secrets
+.streamlit/secrets.toml
+
+# Large databases (Files > 100MB cannot be pushed directly to standard GitHub repositories)
+database/*.MSP
+database/*.msp
+database/*.sqlite
+database/*.db
+database/cache/
+
+# Generated local artifacts
+reports_output/
+local_storage/
+*.log
+
+# OS / Editor specific
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
