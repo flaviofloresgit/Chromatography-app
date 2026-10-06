@@ -2,6 +2,7 @@
 View for sample upload, chromatographic metadata entry, and triggering AI identification.
 """
 
+import json
 import os
 import streamlit as st
 from datetime import date
@@ -12,6 +13,47 @@ from core.quantification.calculator import calculate_relative_areas
 from core.ai.gemini_client import GeminiAnalyzer
 from core.storage import get_repository
 
+DEFAULT_COLUMNS = [
+    "Elite-5MS (30m x 0.25mm x 0.25µm - 5% Difenil 95% Dimetilpolisiloxano)",
+    "Elite-1 / DB-1 (30m x 0.25mm x 0.25µm - 100% Dimetilpolisiloxano)",
+    "Elite-624 / DB-624 (30m x 0.25mm x 1.4µm - VOCs / Solventes)",
+    "Elite-WAX / HP-INNOWAX (30m x 0.25mm x 0.25µm - Polietilenglicol / Polar)",
+    "DB-5MS (30m x 0.25mm x 0.25µm)",
+    "HP-5MS (30m x 0.25mm x 0.25µm)",
+    "Rtx-5MS (30m x 0.25mm x 0.25µm)"
+]
+
+def load_saved_columns() -> list:
+    """Loads default and user-saved custom chromatographic columns."""
+    filepath = os.path.join("local_storage", "columns.json")
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                combined = list(DEFAULT_COLUMNS)
+                for c in saved:
+                    if c not in combined:
+                        combined.append(c)
+                return combined
+        except Exception:
+            pass
+    return list(DEFAULT_COLUMNS)
+
+def save_new_column(new_column: str):
+    """Saves a new column specification to persistent storage."""
+    if not new_column or not new_column.strip():
+        return
+    new_column = new_column.strip()
+    os.makedirs("local_storage", exist_ok=True)
+    filepath = os.path.join("local_storage", "columns.json")
+    current = load_saved_columns()
+    if new_column not in current:
+        current.append(new_column)
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(current, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
 def render_upload_view(on_analysis_completed):
     """
@@ -35,15 +77,17 @@ def render_upload_view(on_analysis_completed):
             notes = st.text_area("Observaciones / Notas de Muestra", value="Muestra procesada en Clarus 690 GC-MS")
 
         with col2:
-            column_options = [
-                "Elite-5MS (30m x 0.25mm x 0.25µm - 5% Difenil 95% Dimetilpolisiloxano)",
-                "DB-5MS (30m x 0.25mm x 0.25µm)",
-                "HP-5MS (30m x 0.25mm x 0.25µm)",
-                "HP-INNOWAX (Polietilenglicol / Polar)",
-                "Personalizada (Especificar en notas)"
-            ]
-            column_type = st.selectbox("Columna Cromatográfica", options=column_options)
+            available_columns = load_saved_columns()
+            column_options = available_columns + ["➕ Otra / Nueva columna personalizada..."]
+            selected_column = st.selectbox("Columna Cromatográfica", options=column_options)
             
+            custom_column_input = st.text_input(
+                "Especificar nueva columna (si seleccionaste '➕ Otra'):",
+                placeholder="ej. Restek Rtx-Wax (30m x 0.32mm x 0.5µm)",
+                help="Escribe la fase estacionaria y dimensiones. Si la guardas, aparecerá en el menú desplegable en todos tus futuros análisis."
+            )
+            save_custom_col = st.checkbox("💾 Guardar esta columna en la lista para futuros análisis", value=True)
+
             c_gas1, c_gas2 = st.columns(2)
             with c_gas1:
                 carrier_gas = st.selectbox("Gas Portador", ["Helio (He)", "Hidrógeno (H2)", "Nitrógeno (N2)"])
@@ -95,6 +139,7 @@ def render_upload_view(on_analysis_completed):
     # Process Form or Demo
     target_bytes = None
     target_filename = ""
+    effective_column = "Elite-5MS (30m x 0.25mm x 0.25µm - 5% Difenil 95% Dimetilpolisiloxano)"
 
     if submit_btn:
         if not uploaded_file:
@@ -103,6 +148,16 @@ def render_upload_view(on_analysis_completed):
         target_bytes = uploaded_file.getvalue()
         target_filename = uploaded_file.name
 
+        # Resolver nombre final de columna
+        if custom_column_input and custom_column_input.strip():
+            effective_column = custom_column_input.strip()
+            if save_custom_col:
+                save_new_column(effective_column)
+        elif "➕ Otra" in selected_column:
+            effective_column = "Columna Personalizada (No especificada)"
+        else:
+            effective_column = selected_column
+
     elif demo_btn:
         sample_path = "Sample test.xlsx"
         if os.path.exists(sample_path):
@@ -110,6 +165,7 @@ def render_upload_view(on_analysis_completed):
                 target_bytes = f.read()
             target_filename = "Sample test.xlsx"
             sample_name = "Muestra Demo Clarus 690 (Hidrocarburos)"
+            effective_column = "Elite-5MS (30m x 0.25mm x 0.25µm - 5% Difenil 95% Dimetilpolisiloxano)"
         else:
             st.error("No se encontró el archivo de prueba local 'Sample test.xlsx'.")
             return
@@ -121,7 +177,7 @@ def render_upload_view(on_analysis_completed):
             sample_name=sample_name,
             sample_code=sample_code,
             analysis_date=analysis_date,
-            column_type=column_type,
+            column_type=effective_column,
             carrier_gas=carrier_gas,
             flow_rate=flow_rate,
             inlet_temperature=inlet_temp,
@@ -134,6 +190,30 @@ def render_upload_view(on_analysis_completed):
             auto_save=auto_save if 'auto_save' in locals() else True,
             on_analysis_completed=on_analysis_completed
         )
+
+    # Column catalog management tool
+    with st.expander("⚙️ Administrar Catálogo de Columnas del Laboratorio"):
+        st.markdown("Agrega columnas cromatográficas para que estén siempre disponibles en la lista desplegable:")
+        m_c1, m_c2 = st.columns([3, 1])
+        with m_c1:
+            direct_new_col = st.text_input(
+                "Nombre y especificaciones de la columna a registrar:",
+                placeholder="ej. VF-WAXms (30m x 0.25mm x 0.25µm)",
+                key="direct_column_reg"
+            )
+        with m_c2:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("➕ Registrar Columna", use_container_width=True):
+                if direct_new_col and direct_new_col.strip():
+                    save_new_column(direct_new_col)
+                    st.success(f"¡Columna '{direct_new_col.strip()}' guardada en la lista desplegable!")
+                    st.rerun()
+                else:
+                    st.warning("Escribe el nombre de la columna primero.")
+
+        st.caption("Columnas registradas actualmente:")
+        for idx, c in enumerate(load_saved_columns(), start=1):
+            st.markdown(f"- **{idx}.** `{c}`")
 
 
 def _execute_analysis_workflow(
