@@ -68,7 +68,7 @@ with st.sidebar:
 
         model_choice = st.selectbox(
             "Modelo Gemini",
-            ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
+            ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
             index=0
         )
         st.session_state["gemini_model"] = model_choice

@@ -35,9 +35,9 @@ def clean_json_text(text: str) -> str:
 class GeminiAnalyzer:
     """Manages AI-driven compound identification and chromatographic chat."""
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
         self.client = None
 
         if GENAI_AVAILABLE and self.api_key:
