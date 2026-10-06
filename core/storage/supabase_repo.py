@@ -231,6 +231,26 @@ class SupabaseSampleRepository(BaseSampleRepository):
         if not self.client:
             return False
 
+        # 1. Recuperar rutas de archivo en Storage antes de eliminar el registro
+        try:
+            res_sample = self.client.table("samples").select("storage_file_path, report_pdf_path").eq("id", sample_id).execute()
+            if res_sample.data:
+                rec = res_sample.data[0]
+                files_to_remove = []
+                if rec.get("storage_file_path"):
+                    files_to_remove.append(rec["storage_file_path"])
+                if rec.get("report_pdf_path"):
+                    files_to_remove.append(rec["report_pdf_path"])
+
+                if files_to_remove:
+                    try:
+                        self.client.storage.from_(self.bucket_name).remove(files_to_remove)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # 2. Eliminar registro en tabla 'samples' (en cascada elimina peaks, identifications y chat_messages)
         res = self.client.table("samples").delete().eq("id", sample_id).execute()
         return len(res.data) > 0
 

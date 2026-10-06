@@ -62,8 +62,8 @@ def render_analysis_view(analysis: SampleAnalysis):
     )
     st.plotly_chart(fig_chrom, use_container_width=True)
 
-    # 4. EXPORT ACTIONS (PDF & Excel)
-    act_col1, act_col2, act_col3 = st.columns([2, 1, 1])
+    # 4. EXPORT & MANAGEMENT ACTIONS (PDF, Excel, Supabase Save/Delete)
+    act_col1, act_col2, act_col3, act_col4 = st.columns([1.8, 1, 1, 1.1])
     with act_col1:
         # Generate PDF Report
         try:
@@ -93,12 +93,24 @@ def render_analysis_view(analysis: SampleAnalysis):
         df_export = _build_dataframe_from_analysis(analysis)
         csv_data = df_export.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Exportar Tabla CSV",
+            label="📥 Exportar CSV",
             data=csv_data,
             file_name=f"Cuantificacion_{m.sample_name.replace(' ', '_')}.csv",
             mime="text/csv",
             use_container_width=True
         )
+
+    with act_col4:
+        with st.popover("🗑️ Borrar Muestra", help="Eliminar permanentemente de Supabase e historial"):
+            st.markdown(f"**¿Eliminar '{m.sample_name}'?**")
+            st.caption("Esta acción eliminará el archivo Excel de Storage y todos los registros en las tablas de Supabase.")
+            if st.button("Sí, borrar de Supabase", key=f"del_curr_{analysis.sample_id}", type="primary", use_container_width=True):
+                repo = get_repository()
+                repo.delete_sample(analysis.sample_id)
+                st.session_state["current_analysis"] = None
+                st.session_state["chat_messages"] = []
+                st.success("Muestra y archivo eliminados de Supabase correctamente.")
+                st.rerun()
 
     st.markdown("---")
 

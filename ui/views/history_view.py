@@ -62,9 +62,20 @@ def render_history_view(on_load_sample):
                             st.error("No se pudo cargar la muestra seleccionada.")
 
             with col5:
-                if st.button("🗑️", key=f"del_{sid}", help="Eliminar muestra", use_container_width=True):
-                    repo.delete_sample(sid)
-                    st.warning(f"Muestra eliminada.")
-                    st.rerun()
+                with st.popover("🗑️", help="Eliminar muestra de Supabase e historial"):
+                    st.markdown(f"**¿Eliminar '{sname}'?**")
+                    st.caption("Esta acción eliminará el archivo Excel y todos los picos y registros de las tablas de Supabase.")
+                    if st.button("Sí, eliminar", key=f"confirm_del_{sid}", type="primary", use_container_width=True):
+                        with st.spinner("Eliminando datos y archivos de Supabase..."):
+                            ok = repo.delete_sample(sid)
+                            if ok:
+                                curr = st.session_state.get("current_analysis")
+                                if curr and curr.sample_id == sid:
+                                    st.session_state["current_analysis"] = None
+                                    st.session_state["chat_messages"] = []
+                                st.success("Muestra y archivo eliminados de Supabase correctamente.")
+                                st.rerun()
+                            else:
+                                st.error("No se pudo eliminar la muestra.")
 
             st.markdown("<hr style='margin: 0.4rem 0; border: none; border-top: 1px solid #E2E8F0;'>", unsafe_allow_html=True)
