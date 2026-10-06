@@ -21,6 +21,9 @@ database/*.sqlite
 database/*.db
 database/cache/
 
+# Equipment manuals & heavy documentation (keep local only)
+docs/
+
 # Generated local artifacts
 reports_output/
 local_storage/
