@@ -43,7 +43,7 @@ if "gemini_api_key" not in st.session_state:
     st.session_state["gemini_api_key"] = os.getenv("GEMINI_API_KEY", "")
 
 if "gemini_model" not in st.session_state:
-    st.session_state["gemini_model"] = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    st.session_state["gemini_model"] = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 
 # 4. SIDEBAR (Configuration & Instrument Details)
 with st.sidebar:
@@ -68,7 +68,7 @@ with st.sidebar:
 
         model_choice = st.selectbox(
             "Modelo Gemini",
-            ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"],
+            ["gemini-3.5-flash-lite", "gemini-3.8-flash"],
             index=0
         )
         st.session_state["gemini_model"] = model_choice

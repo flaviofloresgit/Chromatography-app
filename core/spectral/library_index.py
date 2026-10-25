@@ -177,8 +177,8 @@ class NistLibraryMatcher:
 
     def build_index(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> int:
         """
-        Parses the MSP file and builds the SQLite index.
-        Takes ~5-15 seconds for 240,000+ spectra.
+        Parses the MSP file and builds the SQLite index using exact binary byte offsets.
+        Takes ~15-25 seconds for 240,000+ spectra.
         """
         if not os.path.exists(self.msp_path):
             return 0
@@ -192,8 +192,8 @@ class NistLibraryMatcher:
 
             batch = []
             count = 0
-            
-            with open(self.msp_path, "r", encoding="utf-8", errors="ignore") as f:
+
+            with open(self.msp_path, "rb") as f:
                 cur_name = ""
                 cur_formula = ""
                 cur_mw = 0.0
@@ -201,23 +201,25 @@ class NistLibraryMatcher:
                 reading_peaks = False
                 peaks_accumulator = []
                 entry_start_offset = 0
-                current_offset = 0
 
-                for line in f:
-                    line_len = len(line.encode("utf-8"))
-                    line_s = line.strip()
+                while True:
+                    pos = f.tell()
+                    line = f.readline()
+                    if not line:
+                        break
+
+                    line_s = line.decode("utf-8", errors="ignore").strip()
 
                     if line_s.startswith("Name:"):
-                        # If we have a previous entry, save it
                         if cur_name and peaks_accumulator:
                             peaks_accumulator.sort(key=lambda x: x[1], reverse=True)
                             base_peak = int(round(peaks_accumulator[0][0]))
                             top_ions_str = ",".join(str(int(round(p[0]))) for p in peaks_accumulator[:6])
-                            entry_len = current_offset - entry_start_offset
+                            entry_len = pos - entry_start_offset
                             batch.append((cur_name, cur_formula, cur_mw, cur_cas, base_peak, top_ions_str, entry_start_offset, entry_len))
                             count += 1
 
-                            if len(batch) >= 10000:
+                            if len(batch) >= 15000:
                                 cursor.executemany("""
                                     INSERT INTO nist_index (name, formula, mw, cas, base_peak, top_ions, offset, length)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -225,16 +227,15 @@ class NistLibraryMatcher:
                                 conn.commit()
                                 batch.clear()
                                 if progress_callback:
-                                    progress_callback(current_offset, total_bytes)
+                                    progress_callback(pos, total_bytes)
 
-                        # Start new entry
                         cur_name = line_s[5:].strip()
                         cur_formula = ""
                         cur_mw = 0.0
                         cur_cas = ""
                         reading_peaks = False
                         peaks_accumulator = []
-                        entry_start_offset = current_offset
+                        entry_start_offset = pos
 
                     elif line_s.startswith("Formula:"):
                         cur_formula = line_s[8:].strip()
@@ -264,14 +265,12 @@ class NistLibraryMatcher:
                                         except ValueError:
                                             pass
 
-                    current_offset += line_len
-
                 # Final entry
                 if cur_name and peaks_accumulator:
                     peaks_accumulator.sort(key=lambda x: x[1], reverse=True)
                     base_peak = int(round(peaks_accumulator[0][0]))
                     top_ions_str = ",".join(str(int(round(p[0]))) for p in peaks_accumulator[:6])
-                    entry_len = current_offset - entry_start_offset
+                    entry_len = f.tell() - entry_start_offset
                     batch.append((cur_name, cur_formula, cur_mw, cur_cas, base_peak, top_ions_str, entry_start_offset, entry_len))
                     count += 1
 
@@ -287,14 +286,19 @@ class NistLibraryMatcher:
     def search_candidates(self, spectrum: MassSpectrum, top_k: int = 5) -> List[NistCandidate]:
         """
         Finds the top NIST candidate compounds for a given mass spectrum.
-        Uses Stein-Scott cosine similarity (dot-product).
+        Uses multi-ion filtering and Stein-Scott cosine similarity (dot-product).
         """
         if not spectrum or not spectrum.ions:
             return []
 
         query_pairs = spectrum_to_mz_pairs(spectrum)
         base_mz = int(round(spectrum.base_peak_mz))
-        top_mz_list = spectrum.get_prominent_mz_list(4)
+        top_mz_list = spectrum.get_prominent_mz_list(5)
+
+        # Detect highest significant ion (at least 3% of base peak intensity)
+        significant_ions = [ion for ion in spectrum.ions if ion.relative_intensity >= 30.0]
+        max_significant_mz = int(round(max([ion.mz for ion in significant_ions]))) if significant_ions else base_mz
+        min_mw = max_significant_mz - 2
 
         candidates: List[NistCandidate] = []
 
@@ -304,25 +308,44 @@ class NistLibraryMatcher:
                 candidate_records = []
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
-                    # Query records with matching base peak (+/- 1) or prominent ions
+                    
+                    # Targeted query: match base_peak and secondary prominent ions
+                    i1 = top_mz_list[1] if len(top_mz_list) > 1 else base_mz
+                    i2 = top_mz_list[2] if len(top_mz_list) > 2 else base_mz
+                    i3 = top_mz_list[3] if len(top_mz_list) > 3 else base_mz
+
                     query = """
-                        SELECT name, formula, mw, cas, offset, length
+                        SELECT name, formula, mw, cas, offset, length,
+                          ((base_peak = :bp) * 5 + 
+                           (top_ions LIKE :like1) * 3 + 
+                           (top_ions LIKE :like2) * 3 + 
+                           (top_ions LIKE :like3) * 2) as match_score
                         FROM nist_index
-                        WHERE base_peak IN (?, ?, ?)
+                        WHERE (mw >= :min_mw OR mw = 0)
+                          AND (base_peak IN (:bp, :i1, :i2) OR top_ions LIKE :like1 OR top_ions LIKE :like2)
+                        ORDER BY match_score DESC, abs(mw - :max_mz) ASC
                         LIMIT 60
                     """
-                    cursor.execute(query, (base_mz, base_mz - 1, base_mz + 1))
-                    candidate_records.extend(cursor.fetchall())
+                    cursor.execute(query, {
+                        "bp": base_mz,
+                        "i1": i1,
+                        "i2": i2,
+                        "like1": f"%{i1}%",
+                        "like2": f"%{i2}%",
+                        "like3": f"%{i3}%",
+                        "min_mw": min_mw,
+                        "max_mz": max_significant_mz
+                    })
+                    candidate_records = cursor.fetchall()
 
-                    # If few records, search by second prominent ion
-                    if len(candidate_records) < 15 and len(top_mz_list) > 1:
-                        ion2 = top_mz_list[1]
+                    # Fallback query if very few candidates found (relax MW constraint)
+                    if len(candidate_records) < 10:
                         cursor.execute("""
-                            SELECT name, formula, mw, cas, offset, length
+                            SELECT name, formula, mw, cas, offset, length, 1 as match_score
                             FROM nist_index
-                            WHERE base_peak = ?
-                            LIMIT 30
-                        """, (ion2,))
+                            WHERE base_peak IN (?, ?, ?)
+                            LIMIT 40
+                        """, (base_mz, base_mz - 1, base_mz + 1))
                         candidate_records.extend(cursor.fetchall())
 
                 # Deduplicate records by offset
@@ -333,39 +356,41 @@ class NistLibraryMatcher:
                         seen_offsets.add(rec[4])
                         unique_records.append(rec)
 
-                # Open MSP file and compute spectral similarity for candidate records
-                with open(self.msp_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for name, formula, mw, cas, offset, length in unique_records:
+                # Open MSP file in binary mode and seek with EXACT byte offset
+                with open(self.msp_path, "rb") as f:
+                    for rec in unique_records:
+                        name, formula, mw, cas, offset, length = rec[0], rec[1], rec[2], rec[3], rec[4], rec[5]
                         f.seek(offset)
-                        block_text = f.read(length)
+                        block_bytes = f.read(length)
+                        block_text = block_bytes.decode("utf-8", errors="ignore")
                         entry_data = parse_msp_entry_from_text(block_text)
                         if entry_data and entry_data.get("peaks"):
                             score = compute_spectral_similarity(query_pairs, entry_data["peaks"])
                             candidates.append(NistCandidate(
-                                name=name,
-                                formula=formula,
-                                mw=mw,
-                                cas=cas,
+                                name=entry_data["name"] or name,
+                                formula=entry_data["formula"] or formula,
+                                mw=entry_data["mw"] or mw,
+                                cas=entry_data["cas"] or cas,
                                 similarity_score=round(score, 1),
                                 base_peak=entry_data["base_peak"]
                             ))
 
-            except Exception as e:
-                # If error in DB search, fall through to fallback
+            except Exception:
                 pass
 
-        # 2. Check fallback common GC-MS references
-        for ref in COMMON_GCMS_REFERENCES:
-            score = compute_spectral_similarity(query_pairs, ref["peaks"])
-            if score > 20.0:
-                candidates.append(NistCandidate(
-                    name=ref["name"],
-                    formula=ref["formula"],
-                    mw=float(ref["mw"]),
-                    cas=ref["cas"],
-                    similarity_score=round(score, 1),
-                    base_peak=ref["peaks"][0][0]
-                ))
+        # 2. Check fallback common GC-MS references only if no candidates found
+        if len(candidates) < 3:
+            for ref in COMMON_GCMS_REFERENCES:
+                score = compute_spectral_similarity(query_pairs, ref["peaks"])
+                if score > 20.0:
+                    candidates.append(NistCandidate(
+                        name=ref["name"],
+                        formula=ref["formula"],
+                        mw=float(ref["mw"]),
+                        cas=ref["cas"],
+                        similarity_score=round(score, 1),
+                        base_peak=ref["peaks"][0][0]
+                    ))
 
         # Sort all candidates by similarity score descending
         candidates.sort(key=lambda c: c.similarity_score, reverse=True)

@@ -320,7 +320,7 @@ def _execute_analysis_workflow(
     # 4. Gemini AI Compound Identification
     progress_bar.progress(65, text="Enviando espectros y condiciones a Gemini AI para deducción química...")
     gemini_key = st.session_state.get("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
-    gemini_model = st.session_state.get("gemini_model", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    gemini_model = st.session_state.get("gemini_model", os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
     
     analyzer = GeminiAnalyzer(api_key=gemini_key, model_name=gemini_model)
 
@@ -332,7 +332,7 @@ def _execute_analysis_workflow(
         metadata=metadata,
         peaks=peaks_to_identify,
         candidates_by_peak=candidates_by_peak,
-        batch_size=8,
+        batch_size=10,
         progress_callback=ai_progress,
         use_search_grounding=use_search
     )

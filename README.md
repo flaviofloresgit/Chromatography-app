@@ -111,8 +111,8 @@ Edita `.env` con tus claves:
 # Clave gratuita de Google Gemini (https://aistudio.google.com/)
 GEMINI_API_KEY=tu_api_key_de_gemini
 
-# Modelo recomendado
-GEMINI_MODEL=gemini-2.5-flash
+# Modelo recomendado (rápido y con alta cuota)
+GEMINI_MODEL=gemini-3.5-flash-lite
 
 # Opcional: Credenciales de Supabase (si deseas historial en la nube)
 SUPABASE_URL=https://tu-proyecto.supabase.co
@@ -163,7 +163,7 @@ Si deseas sincronizar los análisis e historial con tu cuenta de Supabase:
 3. En **Settings -> Secrets**, agrega tus variables:
    ```toml
    GEMINI_API_KEY = "tu_api_key_aqui"
-   GEMINI_MODEL = "gemini-2.5-flash"
+   GEMINI_MODEL = "gemini-3.5-flash-lite"
    SUPABASE_URL = "https://tu-proyecto.supabase.co"
    SUPABASE_KEY = "tu_clave_supabase"
    ```

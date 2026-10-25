@@ -24,7 +24,7 @@ def render_chat_view(analysis: Optional[SampleAnalysis]):
     st.caption(f"Contexto activo: **{m.sample_name}** ({m.column_type}) • {len(analysis.peaks)} picos integrados")
 
     gemini_key = st.session_state.get("gemini_api_key", os.getenv("GEMINI_API_KEY", ""))
-    gemini_model = st.session_state.get("gemini_model", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    gemini_model = st.session_state.get("gemini_model", os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"))
     analyzer = GeminiAnalyzer(api_key=gemini_key, model_name=gemini_model)
 
     if not analyzer.is_configured():
